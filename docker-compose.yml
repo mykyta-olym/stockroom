@@ -1,0 +1,54 @@
+# Local development and demo only. The default credentials below are not secrets;
+# they exist so that `docker compose up --build` works with no setup.
+name: stockroom
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: stockroom
+      POSTGRES_PASSWORD: stockroom
+      POSTGRES_DB: stockroom
+    ports:
+      - '127.0.0.1:${STOCKROOM_DB_PORT:-5433}:5432'
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U stockroom -d stockroom']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  setup:
+    build:
+      context: .
+      target: tools
+    environment:
+      DATABASE_URL: postgres://stockroom:stockroom@db:5432/stockroom
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@stockroom.test}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-local-admin-password}
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: [app]
+
+  app:
+    build:
+      context: .
+      target: runner
+    environment:
+      DATABASE_URL: postgres://stockroom:stockroom@db:5432/stockroom
+      # The demo is served over plain HTTP on localhost. Behind TLS, remove this
+      # line so that session cookies get the Secure flag.
+      COOKIE_SECURE: 'false'
+    ports:
+      - '127.0.0.1:${STOCKROOM_APP_PORT:-3000}:3000'
+    depends_on:
+      db:
+        condition: service_healthy
+      setup:
+        condition: service_completed_successfully
+    profiles: [app]
+
+volumes:
+  db-data:
